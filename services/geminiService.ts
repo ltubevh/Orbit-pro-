@@ -1,6 +1,6 @@
 
 import { GoogleGenAI, Type, GenerateContentResponse, Modality } from "@google/genai";
-import { UserInput, VideoIdea } from '../types';
+import { UserInput, VideoIdea, VideoType, Storyboard } from '../types';
 
 const getGenAI = () => {
     if (!process.env.API_KEY) {
@@ -56,31 +56,155 @@ export const generateVideoIdeas = async (input: UserInput): Promise<VideoIdea[]>
     }
 };
 
-export const generateScript = async (title: string): Promise<string> => {
+export const generateScript = async (title: string, videoType: VideoType): Promise<Storyboard> => {
     const ai = getGenAI();
     const prompt = `
-        You are Orbit Write, a master scribe AI. Your task is to write a detailed, insightful, long-form script based on the video title: "${title}".
-        The tone must be conversational and authoritative. Use analogies and rich vocabulary.
-        Ensure flawless English grammar, spelling, and punctuation. The output must feel human-created.
-        For a quiz, create 10 questions with clever distractors and exceptionally detailed answer explanations.
-        For a teaching video, create a clear, engaging, and comprehensive lesson.
+        You are Orbit Write, an expert creator of viral educational YouTube videos for the channel "Pro".
+        Your task is to generate a complete, second-by-second storyboard for a ${videoType} video on the topic: "${title}".
+        The output MUST be a JSON object that strictly adheres to the provided schema.
+
+        The video structure must follow this professional, engaging format:
+        1.  **Preparation:** A short, clear instruction for viewers to get a pen and paper to track their score.
+        2.  **Quiz Section:** Create exactly 10 high-quality, challenging questions.
+            - Each question must have 4 options (A, B, C, D).
+            - For each question, provide a detailed explanation for the correct answer.
+            - CRITICAL: Also provide a concise explanation for WHY the other options are incorrect. This is for deeper learning.
+            - Suggest a simple, relevant visual (image or short clip) for each question.
+            - Classify each question's difficulty as 'easy', 'medium', or 'hard'.
+        3.  **Results Section:** Create 4 tiers for scoring, from perfect to needs improvement. Include an encouraging message for lower scores. Describe a visual effect for each tier (e.g., 'sparkling diamonds', 'golden stars').
+        4.  **Engagement Section:**
+            - Create a "Challenge of the Week": a new, interesting question to be answered in the comments.
+            - Include a call to action to find the "Pro Comment of the Week" in the next video.
+        5.  **Final Call to Action:** A standard CTA mentioning the daily upload schedule (6 PM EAT) and encouraging viewers to subscribe and hit the bell icon.
+
+        The tone should be professional, encouraging, and clear. The language must be international English.
+        Ensure all content is 100% compliant with YouTube Partner Program (YPP) standards and avoids sensitive topics.
     `;
+    
     const response = await ai.models.generateContent({
         model: 'gemini-2.5-pro',
         contents: prompt,
         config: {
+            responseMimeType: 'application/json',
+            responseSchema: {
+                type: Type.OBJECT,
+                properties: {
+                    preparation: { type: Type.STRING, description: "Text for the preparation slide, e.g., 'Grab a pen and paper!'" },
+                    questions: {
+                        type: Type.ARRAY,
+                        description: "An array of 10 quiz questions.",
+                        items: {
+                            type: Type.OBJECT,
+                            properties: {
+                                questionText: { type: Type.STRING },
+                                options: {
+                                    type: Type.ARRAY,
+                                    items: {
+                                        type: Type.OBJECT,
+                                        properties: { key: { type: Type.STRING }, text: { type: Type.STRING } },
+                                        required: ["key", "text"]
+                                    }
+                                },
+                                correctAnswerKey: { type: Type.STRING },
+                                explanation: { type: Type.STRING, description: "Detailed explanation for the correct answer." },
+                                wrongAnswerExplanations: { type: Type.STRING, description: "Explanation of why other options are incorrect." },
+                                visualSuggestion: { type: Type.STRING, description: "A simple visual suggestion for the question." },
+                                difficulty: { type: Type.STRING, enum: ['easy', 'medium', 'hard'] }
+                            },
+                            required: ["questionText", "options", "correctAnswerKey", "explanation", "wrongAnswerExplanations", "visualSuggestion", "difficulty"]
+                        }
+                    },
+                    results: {
+                        type: Type.ARRAY,
+                        description: "Different result messages based on score.",
+                        items: {
+                            type: Type.OBJECT,
+                            properties: {
+                                score: { type: Type.STRING, description: "e.g., 10/10 or <7/10" },
+                                level: { type: Type.STRING, description: "e.g., PRO LEVEL" },
+                                message: { type: Type.STRING },
+                                visualEffect: { type: Type.STRING }
+                            },
+                            required: ["score", "level", "message", "visualEffect"]
+                        }
+                    },
+                    challenge: {
+                        type: Type.OBJECT,
+                        properties: {
+                            question: { type: Type.STRING },
+                            callToAction: { type: Type.STRING }
+                        },
+                        required: ["question", "callToAction"]
+                    },
+                    callToAction: { type: Type.STRING, description: "Final call to action about daily videos." }
+                },
+                required: ["preparation", "questions", "results", "challenge", "callToAction"]
+            },
             thinkingConfig: { thinkingBudget: 32768 }
         }
     });
-    return response.text;
+    
+    try {
+        const jsonText = response.text.trim();
+        return JSON.parse(jsonText);
+    } catch (e) {
+        console.error("Failed to parse storyboard from Gemini response:", response.text);
+        throw new Error("Could not parse the video storyboard from the AI. Please try again.");
+    }
 };
+
+export const createScriptFromStoryboard = (storyboard: Storyboard): string => {
+    let script = [];
+    script.push(storyboard.preparation);
+
+    storyboard.questions.forEach((q, index) => {
+        script.push(`Question ${index + 1}.`);
+        script.push(q.questionText);
+        q.options.forEach(opt => {
+            script.push(`${opt.key}. ${opt.text}`);
+        });
+        script.push(`The correct answer is ${q.correctAnswerKey}.`);
+        script.push(q.explanation);
+        script.push(q.wrongAnswerExplanations);
+    });
+
+    script.push("Time to check your score! How did you do?");
+    storyboard.results.forEach(r => {
+        script.push(`If you scored ${r.score}. ${r.level}! ${r.message}`);
+    });
+
+    script.push("Here's a challenge for our pros!");
+    script.push(storyboard.challenge.question);
+    script.push(storyboard.challenge.callToAction);
+    script.push(storyboard.callToAction);
+
+    return script.join(' \n\n');
+};
+
+export const createVideoPromptFromStoryboard = (storyboard: Storyboard): string => {
+    const visualElements = storyboard.questions.map((q, i) => `Scene ${i+1}: ${q.visualSuggestion}`).join('; ');
+    const resultVisuals = storyboard.results.map(r => `${r.level}: ${r.visualEffect}`).join('; ');
+
+    return `
+      Create a dynamic, professional educational quiz video. The video should be visually engaging with clear, modern text animations.
+      The video has 10 questions. Key visual elements to include are: ${visualElements}.
+      The results section should feature celebratory visuals like: ${resultVisuals}.
+      The overall style should be cinematic, high-resolution, and suitable for an educational YouTube channel called "Pro".
+    `;
+};
+
 
 export const generateTitleDescription = async (title: string): Promise<{ description: string; sources: { title: string; uri: string }[] }> => {
     const ai = getGenAI();
     const prompt = `
         You are Orbit About, a YouTube Marketing Specialist AI.
         Based on the video topic "${title}", generate a highly clickable, SEO-friendly Title and a detailed, keyword-rich Description.
-        The description should accurately summarize the video and include relevant calls to action like "Like, Share, and Subscribe!" and "See you tomorrow at 6 PM for another challenge!".
+        The title should be exciting and in a "Challenge" format, e.g., "English Grammar Challenge! | Only a PRO Can Score 10/10".
+        The description should:
+        1. Accurately summarize the video's quiz/challenge format.
+        2. Include a call to action to comment on the "Challenge of the Week".
+        3. Include a standard call to action like "Like, Share, and Subscribe!" and "See you tomorrow at 6 PM EAT for another challenge!".
+        4. Be keyword-rich for YouTube SEO.
         The response MUST be grounded in up-to-date information from Google Search.
     `;
     const response: GenerateContentResponse = await ai.models.generateContent({
@@ -147,7 +271,7 @@ export const generateVideo = async (prompt: string, screenSize: string): Promise
     
     let operation = await ai.models.generateVideos({
       model: 'veo-3.1-fast-generate-preview',
-      prompt: `A high-resolution, cinematic, educational video about: ${prompt}`,
+      prompt: prompt,
       config: {
         numberOfVideos: 1,
         resolution: '720p',

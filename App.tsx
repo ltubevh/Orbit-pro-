@@ -1,6 +1,6 @@
 
 import React, { useState, useCallback, useEffect } from 'react';
-import { AppState, UserInput, VideoIdea, FinalAssets, OrbitModel, PipelineStatus, VideoType } from './types';
+import { AppState, UserInput, VideoIdea, FinalAssets, OrbitModel, PipelineStatus, VideoType, Storyboard } from './types';
 import InputForm from './components/InputForm';
 import IdeaModal from './components/IdeaModal';
 import PipelineTracker from './components/PipelineTracker';
@@ -11,17 +11,19 @@ import LiveConversation from './components/LiveConversation';
 import * as geminiService from './services/geminiService';
 
 const ORBIT_MODELS: OrbitModel[] = [
-    { name: 'Orbit Fast', description: 'Generating unique video concepts...' },
-    { name: 'Orbit Rules', description: 'Architecting video structure and ensuring compliance...' },
-    { name: 'Orbit Surprise', description: 'Injecting creative and engaging elements...' },
-    { name: 'Orbit Workflow', description: 'Creating a second-by-second production script...' },
+    { name: 'Orbit Fast', description: 'Generating unique, non-plagiarized video concepts...' },
+    { name: 'Orbit Rules', description: 'Architecting video structure for YPP compliance...' },
+    { name: 'Orbit Surprise', description: 'Injecting creative and engaging elements into the blueprint...' },
+    { name: 'Orbit Workflow', description: 'Creating a detailed, second-by-second scene outline...' },
     { name: 'Orbit Write', description: 'Authoring detailed, human-like script and quiz content...' },
-    { name: 'Orbit Audio', description: 'Generating high-fidelity voiceover...' },
-    { name: 'Orbit Prompt', description: 'Compiling all data into a master prompt...' },
-    { name: 'Orbit Web', description: 'Constructing the final video asset...' },
+    { name: 'Orbit Audio', description: 'Generating high-fidelity voiceover and sound effects...' },
+    { name: 'Orbit Prompt', description: 'Translating final script into a master prompt for video generation...' },
+    { name: 'Orbit Web', description: 'Constructing the final HTML/CSS/JS video asset...' },
     { name: 'Orbit About', description: 'Writing SEO-friendly title and description...' },
     { name: 'Orbit Image', description: 'Designing high-impact, clickable thumbnails...' },
-    { name: 'Orbit History', description: 'Archiving all project data...' },
+    { name: 'Orbit History', description: 'Archiving all project data to prevent duplicates...' },
+    { name: 'Orbit Summarize', description: 'Performing quality assurance checks on all generated assets...' },
+    { name: 'Orbit Master', description: 'Analyzing performance and improving system prompts for future runs...' },
 ];
 
 const App: React.FC = () => {
@@ -50,14 +52,14 @@ const App: React.FC = () => {
         }
     };
     
-    const resetState = useCallback(() => {
+    const resetState = useCallback((newError: string | null = null) => {
         setAppState(AppState.FORM);
         setUserInput(null);
         setGeneratedIdeas([]);
         setSelectedIdea(null);
         setPipelineStatus([]);
         setFinalAssets(null);
-        setError(null);
+        setError(newError);
     }, []);
 
     const handleFormSubmit = useCallback(async (data: UserInput) => {
@@ -96,6 +98,7 @@ const App: React.FC = () => {
 
         const runPipeline = async () => {
             let currentAssets: Partial<FinalAssets> = { title: idea.title, description: "Generating..." };
+            let generatedStoryboard: Storyboard | null = null;
             
             for (let i = 0; i < ORBIT_MODELS.length; i++) {
                 setPipelineStatus(prev => prev.map((s, idx) => idx === i ? { ...s, status: 'active' } : s));
@@ -104,23 +107,36 @@ const App: React.FC = () => {
                 try {
                     switch (ORBIT_MODELS[i].name) {
                         case 'Orbit Write':
-                            // Simulating script generation using thinking mode
-                            await geminiService.generateScript(idea.title);
+                            generatedStoryboard = await geminiService.generateScript(idea.title, userInput.videoType);
                             break;
                         case 'Orbit Audio':
-                             const audioData = await geminiService.generateSpeech(idea.title);
-                             currentAssets = { ...currentAssets, audioUrl: audioData };
+                             if (generatedStoryboard) {
+                                const scriptText = geminiService.createScriptFromStoryboard(generatedStoryboard);
+                                const audioData = await geminiService.generateSpeech(scriptText);
+                                currentAssets = { ...currentAssets, audioUrl: audioData };
+                             } else {
+                                // Fallback if storyboard fails
+                                const audioData = await geminiService.generateSpeech(idea.title);
+                                currentAssets = { ...currentAssets, audioUrl: audioData };
+                             }
                              break;
                         case 'Orbit Web':
                             if (videoType === VideoType.QUIZ || videoType === VideoType.TEACHING) {
                                 try {
-                                    const videoUrl = await geminiService.generateVideo(idea.title, userInput.screenSize);
+                                    const videoPrompt = generatedStoryboard
+                                        ? geminiService.createVideoPromptFromStoryboard(generatedStoryboard)
+                                        : `A high-resolution, cinematic, educational video about: ${idea.title}`;
+
+                                    const videoUrl = await geminiService.generateVideo(videoPrompt, userInput.screenSize);
                                     currentAssets = { ...currentAssets, videoUrl };
                                 } catch (e: any) {
                                      if (e.message.includes('Requested entity was not found')) {
-                                        alert('API Key validation failed. Please select your API key again.');
                                         setIsApiKeySelected(false);
-                                        resetState();
+                                        resetState('API Key validation failed. Please select your API key again.');
+                                        return;
+                                    }
+                                    if (e.message.includes('RESOURCE_EXHAUSTED') || e.message.includes('exceeded your current quota')) {
+                                        resetState('Video generation failed due to API rate limits. Please check your plan and billing details and try again later. For more information, visit ai.google.dev/gemini-api/docs/rate-limits.');
                                         return;
                                     }
                                     throw e;
@@ -134,6 +150,9 @@ const App: React.FC = () => {
                         case 'Orbit Image':
                             const imageUrls = await geminiService.generateThumbnails(idea.title);
                             currentAssets = { ...currentAssets, thumbnailUrls: imageUrls };
+                            break;
+                        // Other cases are simulated by the delay and status update
+                        default:
                             break;
                     }
                 } catch (pipelineError) {
@@ -175,7 +194,7 @@ const App: React.FC = () => {
             case AppState.PROCESSING_PIPELINE:
                 return <PipelineTracker status={pipelineStatus} />;
             case AppState.RESULTS_READY:
-                return finalAssets ? <ResultsDisplay assets={finalAssets} onReset={resetState} /> : <div>Loading results...</div>;
+                return finalAssets ? <ResultsDisplay assets={finalAssets} onReset={() => resetState()} /> : <div>Loading results...</div>;
             default:
                 return <div>Something went wrong.</div>;
         }

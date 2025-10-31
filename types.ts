@@ -1,4 +1,3 @@
-
 export enum VideoType {
     QUIZ = "Quiz",
     TEACHING = "Teaching",
@@ -46,14 +45,42 @@ export interface PipelineStatus extends OrbitModel {
     status: Status;
 }
 
-// Fix: Define AIStudio interface to resolve conflicting global declarations.
-export interface AIStudio {
-    hasSelectedApiKey: () => Promise<boolean>;
-    openSelectKey: () => Promise<void>;
+export interface Question {
+    questionText: string;
+    options: { key: string; text: string }[];
+    correctAnswerKey: string;
+    explanation: string;
+    wrongAnswerExplanations: string;
+    visualSuggestion: string;
+    difficulty: 'easy' | 'medium' | 'hard';
+}
+
+export interface ScoreTier {
+    score: string;
+    level: string;
+    message: string;
+    visualEffect: string;
+}
+
+export interface Storyboard {
+    preparation: string;
+    questions: Question[];
+    results: ScoreTier[];
+    challenge: {
+        question: string;
+        callToAction: string;
+    };
+    callToAction: string;
 }
 
 // Type for window.aistudio
 declare global {
+    // Fix: Define AIStudio interface inside global scope to resolve conflicting declarations.
+    interface AIStudio {
+        hasSelectedApiKey: () => Promise<boolean>;
+        openSelectKey: () => Promise<void>;
+    }
+
     interface Window {
         aistudio?: AIStudio;
         webkitAudioContext: typeof AudioContext;
