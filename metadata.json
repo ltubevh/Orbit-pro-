@@ -1,0 +1,8 @@
+{
+  "name": "Orbit pro ",
+  "description": "An autonomous AI ecosystem for daily production of high-quality educational YouTube videos. This application serves as the user gateway, allowing users to input topics and preferences to kickstart the AI-driven video creation pipeline, from ideation to final asset generation.",
+  "requestFramePermissions": [
+    "camera",
+    "microphone"
+  ]
+}

@@ -1,0 +1,48 @@
+
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="/vite.svg" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Project Orbit: AI Video Factory</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+      @keyframes sparkle {
+        0%, 100% { opacity: 0; transform: scale(0.5); }
+        50% { opacity: 1; transform: scale(1.2); }
+      }
+      .sparkle {
+        animation: sparkle 1s ease-in-out infinite;
+      }
+      @keyframes rotate {
+        from { transform: rotate(0deg); }
+        to { transform: rotate(360deg); }
+      }
+      .animate-rotate {
+        animation: rotate 10s linear infinite;
+      }
+      @keyframes pulse-glow {
+        0%, 100% { box-shadow: 0 0 10px 0px #6366f1; }
+        50% { box-shadow: 0 0 25px 5px #6366f1; }
+      }
+      .pulse-glow {
+        animation: pulse-glow 2.5s ease-in-out infinite;
+      }
+    </style>
+  <script type="importmap">
+{
+  "imports": {
+    "react/": "https://aistudiocdn.com/react@^19.2.0/",
+    "react": "https://aistudiocdn.com/react@^19.2.0",
+    "react-dom/": "https://aistudiocdn.com/react-dom@^19.2.0/",
+    "@google/genai": "https://aistudiocdn.com/@google/genai@^1.28.0"
+  }
+}
+</script>
+</head>
+  <body class="bg-gray-900 text-white antialiased">
+    <div id="root"></div>
+    <script type="module" src="/index.tsx"></script>
+  </body>
+</html>
